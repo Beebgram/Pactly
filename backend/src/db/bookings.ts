@@ -1072,3 +1072,69 @@ export async function markClientReminderShown(db: Db, bookingId: string, shownAt
 export async function markProviderReminderShown(db: Db, bookingId: string, shownAt: number): Promise<void> {
   await db.update(bookings).set({ providerReminderShownAt: shownAt }).where(eq(bookings.id, bookingId));
 }
+
+/** Increments `provider_profiles.verified_session_count` for `bookingId` at
+ * most once, and returns whether it did. The `WHERE ... IS NULL` on the
+ * marker is what enforces "the same booking cannot increase the count
+ * twice" independently of any dedupe ledger. */
+export function recordVerifiedSessionCountedSync(
+  db: DbOrTx,
+  bookingId: string,
+  providerProfileId: string,
+  now: number,
+): boolean {
+  const marked = db
+    .update(bookings)
+    .set({ verifiedSessionCountedAt: now })
+    .where(and(eq(bookings.id, bookingId), isNull(bookings.verifiedSessionCountedAt)))
+    .run();
+  if (marked.changes === 0) {
+    return false;
+  }
+  db.update(providerProfiles)
+    .set({ verifiedSessionCount: sql`${providerProfiles.verifiedSessionCount} + 1` })
+    .where(eq(providerProfiles.id, providerProfileId))
+    .run();
+  return true;
+}
+
+/**
+ * Marks a booking as arrived -- the provider's record that the client showed
+ * up. Succeeds (returns `true`) only once: the first call for a booking with
+ * no `arrivedAt` yet set. A second call returns `false` (keeps the first
+ * timestamp), and a call for a nonexistent booking also returns `false`.
+ */
+export async function markBookingArrived(db: Db, bookingId: string, arrivedAt: number): Promise<boolean> {
+  const result = await db
+    .update(bookings)
+    .set({ arrivedAt })
+    .where(and(eq(bookings.id, bookingId), isNull(bookings.arrivedAt)));
+  return result.changes > 0;
+}
+
+/** The provider-cancellation sibling of
+ * {@link recordVerifiedSessionCountedSync}: increments
+ * `provider_profiles.provider_cancellation_count` at most once per booking.
+ * Only a dispute whose reason is `provider-cancel` ever calls this; a client
+ * cancelling, a no-show, a plain disagreement, a refund or a release never
+ * does. */
+export function recordProviderCancellationCountedSync(
+  db: DbOrTx,
+  bookingId: string,
+  providerProfileId: string,
+  now: number,
+): boolean {
+  const marked = db
+    .update(bookings)
+    .set({ providerCancellationCountedAt: now })
+    .where(and(eq(bookings.id, bookingId), isNull(bookings.providerCancellationCountedAt)))
+    .run();
+  if (marked.changes === 0) {
+    return false;
+  }
+  db.update(providerProfiles)
+    .set({ providerCancellationCount: sql`${providerProfiles.providerCancellationCount} + 1` })
+    .where(eq(providerProfiles.id, providerProfileId))
+    .run();
+  return true;
+}

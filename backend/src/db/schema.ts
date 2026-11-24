@@ -100,6 +100,8 @@ export const providerProfiles = sqliteTable("provider_profiles", {
    * offered (0-120). Does not change weekly hours or move existing locks. */
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
   isApproved: integer("is_approved", { mode: "boolean" }).notNull().default(false),
+  suspendedAt: integer("suspended_at"),
+  suspensionReason: text("suspension_reason"),
   /** Issue #62: the shop's own pause on *new* bookings. Independent of
    * `isApproved` -- an admin suspension still hides the shop entirely, and
    * this pause never clears one. While `true`, discovery advertises the
@@ -842,6 +844,8 @@ export const savedShops = sqliteTable(
   },
   (table) => [unique().on(table.clientWalletAddress, table.providerProfileId)],
 );
+
+/**
  * Shop reports: a signed-in client can report a shop listing to admins.
  * One report per client per shop per day. Does not change the shop's status.
  */
@@ -881,3 +885,15 @@ export const waitlistEntries = sqliteTable(
 );
 
 export type WaitlistEntryRow = typeof waitlistEntries.$inferSelect;
+
+export const escrowContractDeployments = sqliteTable(
+  "escrow_contract_deployments",
+  {
+    bookingId: text("booking_id").notNull(),
+    contractId: text("contract_id").notNull(),
+    deployedAt: integer("deployed_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.bookingId, table.contractId] })],
+);
+
+export type EscrowContractDeploymentRow = typeof escrowContractDeployments.$inferSelect;
