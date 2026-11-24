@@ -35,7 +35,7 @@ interface GridDay {
  * demo's Istanbul, UTC+3) and an accepted simplification for this story's
  * grid (no frontend test runner; manual verification only).
  */
-function buildGridDays(now: number, timeZone?: string): GridDay[] {
+function buildGridDays(now: number, timeZone?: string, bufferMinutes = 0): GridDay[] {
   const days: GridDay[] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -51,7 +51,18 @@ function buildGridDays(now: number, timeZone?: string): GridDay[] {
         cells.push(startsAt);
       }
     }
-    if (cells.length > 0) {
+    // Add buffer gap cells at the end of the day's available slots.
+    // When bufferMinutes is 0, no gap cells are added.
+    const gapCells: number[] = [];
+    if (bufferMinutes > 0) {
+      const gapCount = Math.ceil(bufferMinutes / GRID_STEP_MINUTES);
+      // Gap cells are the last `gapCount` cells before 20:00.
+      const startIndex = Math.max(0, cells.length - gapCount);
+      for (let i = startIndex; i < cells.length; i += 1) {
+        gapCells.push(cells[i]);
+      }
+    }
+    if (cells.length > 0 || gapCells.length > 0) {
       days.push({
                         dayLabel: dayDate.toLocaleDateString(undefined, {
                   weekday: "short",
@@ -60,6 +71,7 @@ function buildGridDays(now: number, timeZone?: string): GridDay[] {
                   ...(timeZone ? { timeZone } : {}),
                 }),
         cells,
+        gapCells,
       });
     }
   }
@@ -176,6 +188,7 @@ export function AvailabilityPage() {
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeResult, setCloseResult] = useState<Awaited<ReturnType<typeof closeProviderDate>> | undefined>();
   const [closeError, setCloseError] = useState<string | undefined>();
+  const [editWeekday, setEditWeekday] = useState<number | undefined>(undefined);
 
   // Seeds local form state only the first time a profile loads, or when it
   // switches to a *different* profile (a new sign-in) -- never on every
@@ -208,7 +221,7 @@ export function AvailabilityPage() {
   }, [profileQuery.data]);
 
   const now = useMemo(() => Math.floor(Date.now() / 1000), []);
-  const gridDays = useMemo(() => buildGridDays(now), [now]);
+  const gridDays = useMemo(() => buildGridDays(now, profile.timezone, bufferMinutes), [now, bufferMinutes]);
   const sessionSeconds = (profileQuery.data?.sessionLengthMinutes ?? 30) * 60;
 
   function handleSignOut(): void {
@@ -384,7 +397,10 @@ export function AvailabilityPage() {
 
   async function handleSaveAvailability(): Promise<void> {
     try {
-      const saved = await updateAvailability.mutateAsync([...selectedSlots].sort((a, b) => a - b));
+      const saved = await updateAvailability.mutateAsync({
+        slots: [...selectedSlots].sort((a, b) => a - b),
+        weekday: editWeekday,
+      });
       // Only the slot selection -- an unsaved edit in the rules form above
       // must survive this save untouched.
       setSelectedSlots(new Set(saved.slots));
@@ -788,9 +804,39 @@ export function AvailabilityPage() {
                     </button>
                   );
                 })}
+                {day.gapCells.map((cell) => {
+                  // Gap cells are non-selectable display elements only.
+                  return (
+                    <span
+                      key={cell}
+                      className="availability-cell tabular-nums availability-cell--gap"
+                    >
+                      {formatSlotTime(cell, profile.timezone)}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           ))}
+        </div>
+        <div style={{ display: "flex", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
+          <div className="field" style={{ minWidth: "120px" }}>
+            <label htmlFor="edit-weekday">Edit weekday</label>
+            <select id="edit-weekday" value={editWeekday !== undefined ? WEEKDAY_LABELS[editWeekday] : ""} onChange={(event) => setEditWeekday(event.target.value === "" ? undefined : WEEKDAY_LABELS.indexOf(event.target.value))}>
+              <option value="">All weekdays</option>
+              {WEEKDAY_LABELS.map((label, value) => (
+                <option key={label} value={value}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            className="button-ghost"
+            style={{ minWidth: "120px" }}
+            onClick={() => setEditWeekday(undefined)}
+          >
+            Clear selection
+          </button>
         </div>
         <button
           type="button"

@@ -106,6 +106,10 @@ export const providerProfiles = sqliteTable("provider_profiles", {
    * shop as not taking bookings and `holdSlot` refuses a new hold; existing
    * bookings, locks, releases and disputes are untouched. */
   bookingsPaused: integer("bookings_paused", { mode: "boolean" }).notNull().default(false),
+  /** Issue #145: optional/intake answers stored as JSON. Each entry has
+   * `questionId`, `questionText`, `isOptional`, and `answer`. Null answer
+   * means unanswered (only allowed when `isOptional` is true). */
+  intakeAnswers: text("intake_answers").notNull().default("[]"),
   /** Increases only on the chain's `released` event (FR20); never written
    * by hand outside the event worker's own bookkeeping. */
   verifiedSessionCount: integer("verified_session_count").notNull().default(0),
