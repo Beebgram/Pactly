@@ -59,7 +59,10 @@ export function DiscoverPage() {
     return categories.some((category) => category.slug === requestedSlug) ? requestedSlug : undefined;
   }, [requestedSlug, categoriesReady, categories]);
 
-  const q = searchParams.get("q") ?? "";
+  const qRaw = searchParams.get("q") ?? "";
+  // Issue #155: a query of only spaces is treated as empty, so an all-space
+  // URL never filters, never echoes whitespace, and the field reads empty.
+  const q = qRaw.trim() ? qRaw : "";
   const formats = searchParams.getAll("format");
   const minPriceRaw = searchParams.get("minPrice");
   const minPrice = minPriceRaw !== null && NON_NEGATIVE_INTEGER_STRING.test(minPriceRaw) ? minPriceRaw : undefined;
