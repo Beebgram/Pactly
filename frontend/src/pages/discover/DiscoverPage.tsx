@@ -76,6 +76,7 @@ export function DiscoverPage() {
       : undefined;
   const whenRaw = searchParams.get("when");
   const availability = whenRaw && AVAILABILITY_VALUES.has(whenRaw as DiscoverAvailability) ? (whenRaw as DiscoverAvailability) : undefined;
+  const sort = searchParams.get("sort") ?? undefined;
 
   function updateParams(mutate: (params: URLSearchParams) => void): void {
     const next = new URLSearchParams(searchParams);
@@ -149,6 +150,16 @@ export function DiscoverPage() {
     });
   }
 
+  function setSort(value: string | undefined): void {
+    updateParams((params) => {
+      if (value) {
+        params.set("sort", value);
+      } else {
+        params.delete("sort");
+      }
+    });
+  }
+
   function clearFilter(key: string): void {
     updateParams((params) => {
       if (key === "format") params.delete("format");
@@ -184,6 +195,7 @@ export function DiscoverPage() {
       maxPrice,
       maxDepositBps,
       when: availability,
+      sort,
     },
     { enabled: !waitingForCategoryResolution },
   );
@@ -230,6 +242,8 @@ export function DiscoverPage() {
     onMaxDepositBpsChange: setMaxDepositBps,
     availability,
     onAvailabilityChange: setAvailability,
+    sort,
+    onSortChange: setSort,
   };
 
   const resultsQualifier = q.trim() ? q.trim() : selectedCategoryName;

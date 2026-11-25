@@ -41,7 +41,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { TransactionBuilder } from "@stellar/stellar-sdk";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, isNotNull, isNull, ne, or } from "drizzle-orm";
 
 import { config } from "../config.js";
 import { isWithinBookingWindow } from "./bookingWindow.js";
@@ -100,6 +100,7 @@ import {
   listOfferedSlotsInRange,
 } from "./availability.js";
 import { recordEscrowDisputeResolution } from "../db/escrowDisputeResolutions.js";
+import { listContractDeployments, recordContractDeployment } from "../db/escrowContractDeployments.js";
 import { escrowDisputeOpenings, bookings } from "../db/schema.js";
 import { getEscrowDisputeOpening, getEscrowDisputeOpeningsForBookings, recordEscrowDisputeOpening } from "../db/escrowDisputeOpenings.js";
 import { getProviderProfileById, getProviderProfileByWallet } from "../db/providerProfiles.js";
@@ -2055,6 +2056,11 @@ export interface BookingView {
    * shop and the client on the booking detail page, never on the public
    * profile or discovery). */
   note: string | null;
+  /** Set only when the shop closed this date and released this unpaid
+   * hold early (`shop-closed-date`); `null` for a plain expiry or a locked
+   * booking. Drives the client's "the shop closed this date, no deposit was
+   * taken" copy. */
+  holdReleasedReason: BookingRow["holdReleaseReason"];
   /** Issue #35: true when this read triggered showing a reminder (appointment
    * day-before notice). False when already shown or conditions not met. */
   reminderShown: boolean;
@@ -2134,6 +2140,7 @@ export async function getBookingView(
       : { id: booking.providerProfileId, displayName: "", title: "" },
     balancePaymentTxHash: booking.balancePaymentTxHash,
     note: booking.note,
+    holdReleasedReason: booking.holdReleaseReason,
     reminderShown,
     disputeOpenedByWallet,
   };
@@ -2585,3 +2592,90 @@ export async function listBookingsForProvider(
   items.sort((a, b) => compareByAppointmentDate(a, b, now));
   return items;
 }
+
+export type SlotUnbookableReason = "past" | "too soon" | "buffered" | "held" | "closed" | "paused";
+
+/**
+ * Issue #141: Returns why a slot cannot be booked, or null if it is bookable.
+ * Checked strictly in this order:
+ * 1. "past": slotStartsAt <= now
+ * 2. "too soon": within provider's minimumNoticeMinutes
+ * 3. "buffered": inside the provider's buffer window after a locked booking
+ * 4. "held": another active booking/hold already occupies the slot
+ * 5. "closed": provider marked the date as closed
+ * 6. "paused": provider has paused new bookings
+ */
+export async function getSlotUnbookableReason(
+  db: Db,
+  providerProfileId: string,
+  slotStartsAt: number,
+  now: number = Math.floor(Date.now() / 1000),
+): Promise<SlotUnbookableReason | null> {
+  const profile = await getProviderProfileById(db, providerProfileId);
+  if (!profile) {
+    throw new ProviderNotFoundError();
+  }
+
+  // 1. past
+  if (slotStartsAt <= now) {
+    return "past";
+  }
+
+  // 2. too soon
+  if (profile.minimumNoticeMinutes && profile.minimumNoticeMinutes > 0) {
+    const minStart = now + profile.minimumNoticeMinutes * 60;
+    if (slotStartsAt < minStart) {
+      return "too soon";
+    }
+  }
+
+  // 3. buffered
+  if (profile.bufferMinutes && profile.bufferMinutes > 0) {
+    const lockedStarts = await listLockedBookingStarts(db, profile.id);
+    const buffered = lockedStarts.some((lockedStartsAt) =>
+      isSlotInsideBufferAfterLocked(
+        slotStartsAt,
+        lockedStartsAt,
+        profile.sessionLengthMinutes,
+        profile.bufferMinutes,
+      ),
+    );
+    if (buffered) {
+      return "buffered";
+    }
+  }
+
+  // 4. held
+  const slot = await getSlotByProviderAndStart(db, profile.id, slotStartsAt);
+  if (slot) {
+    const activeBookings = await db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.slotId, slot.id),
+          or(
+            and(isNotNull(bookings.escrowState), ne(bookings.escrowState, "refunded")),
+            and(isNull(bookings.escrowState), gte(bookings.holdExpiresAt, now)),
+          ),
+        ),
+      )
+      .limit(1);
+    if (activeBookings.length > 0) {
+      return "held";
+    }
+  }
+
+  // 5. closed
+  if (await isDateClosed(db, profile.id, utcDateFor(slotStartsAt))) {
+    return "closed";
+  }
+
+  // 6. paused
+  if (profile.bookingsPaused) {
+    return "paused";
+  }
+
+  return null;
+}
+

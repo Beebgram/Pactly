@@ -65,6 +65,8 @@ export interface SeedProviderProfileOptions {
   priceAmount?: string;
   depositRateBps?: number;
   cancellationWindowHours?: number;
+  minimumNoticeMinutes?: number;
+  bufferMinutes?: number;
   /** Defaults to `false`, matching the real default -- a profile this
    * story creates is unapproved until Story 4.1/4.2 decides otherwise
    * (PRD Story 4.1 AC4: an unapproved profile must never appear in a
@@ -91,6 +93,8 @@ export async function seedProviderProfile(
     priceAmount: options.priceAmount ?? "10000000",
     depositRateBps: options.depositRateBps ?? 2000,
     cancellationWindowHours: options.cancellationWindowHours ?? 24,
+    minimumNoticeMinutes: options.minimumNoticeMinutes ?? 0,
+    bufferMinutes: options.bufferMinutes ?? 0,
     isApproved: options.isApproved ?? false,
     createdAt: Date.now(),
   });

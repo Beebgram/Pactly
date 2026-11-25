@@ -21,8 +21,10 @@ import {
   listApprovedProviderProfiles,
   listApprovedProviderProfilesForDiscover,
   setProviderProfileBookingsPaused,
+  setProviderProfileSuspension,
   updateProviderProfileRules,
   updateProviderProfileText as persistProviderProfileText,
+  updateProviderProfileTimezone,
   type ProviderProfileRow,
 } from "../db/providerProfiles.js";
 import {
@@ -31,9 +33,20 @@ import {
   replaceFutureSlots,
   type AvailabilitySlotRow,
 } from "../db/availabilitySlots.js";
+import { listProviderBreaks, replaceProviderBreaks, type ProviderBreak } from "../db/providerBreaks.js";
+import { type ReviewView } from "../db/reviews.js";
+import { isValidTimeZone } from "./timezone.js";
+import { buildPublicHours, type PublicDayHours } from "./publicHours.js";
 import { getCategoryById, getCategoryBySlug, listCategories, listVisibleCategories, type CategoryRow } from "../db/categories.js";
 import type { Db } from "../db/client.js";
-import { listEarliestOfferedSlotsByProvider, listOfferedSlots } from "./availability.js";
+import {
+  assertBreaksWithinRanges,
+  filterSlotsOutsideBreaks,
+  listEarliestOfferedSlotsByProvider,
+  listOfferedSlots,
+  validateBreaks,
+  workingRangesForSlots,
+} from "./availability.js";
 import { isWithinBookingWindow } from "./bookingWindow.js";
 
 /** Pactly's only supported asset for now (matches `services/booking.ts`'s
@@ -373,6 +386,10 @@ export interface ProviderProfileView {
   /** Issues #64/#65: the shop's IANA timezone -- every slot label is
    * rendered in this zone, and weekday breaks are named in it. */
   timezone: string;
+  /** Issue #140: true when shop has been suspended by an administrator. */
+  isSuspended: boolean;
+  /** Issue #140: admin's reason for the suspension, if suspended. */
+  suspensionReason: string | null;
   /** UTC epoch seconds, ascending. */
   slots: number[];
   /** Issue #65: the shop's own weekly breaks -- present on the owner's own
@@ -387,9 +404,8 @@ export interface ProviderProfileView {
 export function buildProviderProfileView(
   profile: ProviderProfileRow,
   category: CategoryRow,
-  slots: AvailabilitySlotRow[],
-  reviews: ReviewView[] = [],
   slots: Array<Pick<AvailabilitySlotRow, "startsAt"> | number>,
+  reviews: ReviewView[] = [],
 ): ProviderProfileView {
   let languages: string[] = [];
   try {
@@ -422,6 +438,10 @@ export function buildProviderProfileView(
     verifiedSessionCount: profile.verifiedSessionCount,
     providerCancellationCount: profile.providerCancellationCount,
     isApproved: profile.isApproved,
+    bookingsPaused: Boolean(profile.bookingsPaused),
+    timezone: profile.timezone,
+    isSuspended: profile.suspendedAt !== null,
+    suspensionReason: profile.suspensionReason ?? null,
     slots: slots.map((slot) => (typeof slot === "number" ? slot : slot.startsAt)),
   };
 }
@@ -460,18 +480,31 @@ export async function getPublicProviderProfile(
   db: Db,
   id: string,
   now: number = Math.floor(Date.now() / 1000),
+  callerWalletAddress?: string,
 ): Promise<ProviderProfileView> {
   const profile = await getProviderProfileById(db, id);
-  if (!profile || !profile.isApproved || profile.suspendedAt !== null) {
+  if (!profile || !profile.isApproved) {
+    throw new ProviderNotFoundError();
+  }
+  if (profile.suspendedAt !== null) {
+    // Issue #140: If signed in as that shop owner, return the profile view
+    // so they see the explanation that admin suspended it without booking controls.
+    // Other callers get the same ProviderNotFoundError.
+    if (callerWalletAddress && callerWalletAddress === profile.walletAddress) {
+      const category = await loadCategoryOrThrow(db, profile.categoryId, () => new ProviderNotFoundError());
+      return buildProviderProfileView(profile, category, []);
+    }
     throw new ProviderNotFoundError();
   }
   const category = await loadCategoryOrThrow(db, profile.categoryId, () => new ProviderNotFoundError());
-  const offeredStarts = await listOfferedSlots(db, profile.id, {
-    now,
-    withinSeconds: PUBLIC_SLOTS_WINDOW_SECONDS,
-    sessionLengthMinutes: profile.sessionLengthMinutes,
-    bufferMinutes: profile.bufferMinutes,
-  });
+  const offeredStarts = profile.bookingsPaused
+    ? []
+    : await listOfferedSlots(db, profile.id, {
+        now,
+        withinSeconds: PUBLIC_SLOTS_WINDOW_SECONDS,
+        sessionLengthMinutes: profile.sessionLengthMinutes,
+        bufferMinutes: profile.bufferMinutes,
+      });
   const noticeSeconds = (profile.minimumNoticeMinutes ?? 0) * 60;
   let visibleStarts = noticeSeconds > 0
     ? offeredStarts.filter((startsAt) => startsAt >= now + noticeSeconds)
@@ -876,6 +909,8 @@ export interface DiscoverFilters {
    * all (the I/O matrix never mentions filtering out slotless providers
    * unless a window is actually chosen). */
   availability?: "24h" | "week";
+  /** Issue #138: sort choice (e.g. "soonest" or "next-slot" vs "default"). */
+  sort?: string;
 }
 
 /** `GET /providers[?category=<slug>&...]`: approved providers as card
@@ -945,7 +980,16 @@ export async function listDiscoverProviders(
     now,
     CARD_EARLIEST_SLOTS_LIMIT,
   );
+  const weeklyPatternSlotsByProvider = await listWeeklyPatternSlotsByProvider(
+    db,
+    profiles.map((profile) => profile.id),
+    now,
+  );
   for (const profile of profiles) {
+    if (profile.bookingsPaused) {
+      earliestSlotsByProvider.set(profile.id, []);
+      continue;
+    }
     const slots = earliestSlotsByProvider.get(profile.id);
     if (slots) {
       earliestSlotsByProvider.set(
@@ -993,23 +1037,29 @@ export async function listDiscoverProviders(
     );
   });
 
-  cards.sort((a, b) => {
-    const aSlot = a.earliestSlots[0];
-    const bSlot = b.earliestSlots[0];
-    if (aSlot === undefined && bSlot === undefined) {
+  if (filters.sort === "default") {
+    cards.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  } else {
+    // Default and "soonest" / "next-slot": sort by soonest future open slot ascending,
+    // slotless providers last, ties broken by displayName.
+    cards.sort((a, b) => {
+      const aSlot = a.earliestSlots[0];
+      const bSlot = b.earliestSlots[0];
+      if (aSlot === undefined && bSlot === undefined) {
+        return a.displayName.localeCompare(b.displayName);
+      }
+      if (aSlot === undefined) {
+        return 1;
+      }
+      if (bSlot === undefined) {
+        return -1;
+      }
+      if (aSlot !== bSlot) {
+        return aSlot - bSlot;
+      }
       return a.displayName.localeCompare(b.displayName);
-    }
-    if (aSlot === undefined) {
-      return 1;
-    }
-    if (bSlot === undefined) {
-      return -1;
-    }
-    if (aSlot !== bSlot) {
-      return aSlot - bSlot;
-    }
-    return a.displayName.localeCompare(b.displayName);
-  });
+    });
+  }
 
   return cards;
 }

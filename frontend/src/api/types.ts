@@ -67,6 +67,10 @@ export interface ProviderProfile {
   bookingsPaused: boolean;
   /** Issues #64/#65: the shop's IANA timezone for slot labels and breaks. */
   timezone: string;
+  /** Issue #140: true when shop has been suspended by an administrator. */
+  isSuspended?: boolean;
+  /** Issue #140: admin's reason for the suspension, if suspended. */
+  suspensionReason?: string | null;
   /** UTC epoch seconds, ascending. */
   slots: number[];
   /** Issue #65: present on the owner's own profile only. */
@@ -149,6 +153,8 @@ export interface DiscoverFiltersParams {
   maxPrice?: string;
   maxDepositBps?: number;
   when?: DiscoverAvailability;
+  /** Issue #138: sort order, e.g. "soonest" / "next-slot" vs "default" */
+  sort?: string;
 }
 
 // ---------------------------------------------------------------------------
