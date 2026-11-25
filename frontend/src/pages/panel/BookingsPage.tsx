@@ -166,6 +166,11 @@ export function BookingsPage() {
                     <td className="tabular-nums">{shortenStellarId(booking.clientWalletAddress)}</td>
                     <td className="tabular-nums">
                       <TryAmount amount={booking.deposit.amount} />
+                      {booking.anchorTransactionId && (
+                        <div style={{ overflowWrap: "anywhere", userSelect: "all" }} title="Bank transfer reference">
+                          Ref: {booking.anchorTransactionId}
+                        </div>
+                      )}
                     </td>
                     <td className="tabular-nums">
                       <TryAmount amount={booking.balance.amount} /> · {BALANCE_STATE_LABEL[booking.balanceState]}
@@ -264,6 +269,7 @@ export function BookingsPage() {
                 serverTime={booking.serverTime}
                 contractId={booking.contractId}
                 balancePaymentTxHash={booking.balancePaymentTxHash}
+                anchorTransactionId={booking.anchorTransactionId}
                 session={session}
                 onActionSubmitted={() => bookingsQuery.refetch()}
                 onUnauthorized={handleSignOut}
@@ -299,6 +305,7 @@ export function BookingsPage() {
                 serverTime={booking.serverTime}
                 contractId={booking.contractId}
                 balancePaymentTxHash={booking.balancePaymentTxHash}
+                anchorTransactionId={booking.anchorTransactionId}
                 session={session}
                 onActionSubmitted={() => bookingsQuery.refetch()}
                 onUnauthorized={handleSignOut}

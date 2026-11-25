@@ -2056,6 +2056,12 @@ export interface BookingView {
    * no transaction to point at). Drives the balance row's own Stellar
    * Expert link, per the spec's own "Always" rule. */
   balancePaymentTxHash: string | null;
+  /** The anchor's own transaction id for the local-currency (SEP-6)
+   * deposit that funds this booking, `null` when none was started. Lets
+   * support tie a failed or partial deposit back to the booking. Shown to
+   * the booking's client and shop only -- never on the public profile or
+   * proof page. */
+  anchorTransactionId: string | null;
   /** Story 3.8: the client's private note on this booking (visible to the
    * shop and the client on the booking detail page, never on the public
    * profile or discovery). */
@@ -2143,6 +2149,7 @@ export async function getBookingView(
       ? { id: profile.id, displayName: profile.displayName, title: profile.title }
       : { id: booking.providerProfileId, displayName: "", title: "" },
     balancePaymentTxHash: booking.balancePaymentTxHash,
+    anchorTransactionId: booking.anchorDepositId,
     note: booking.note,
     holdReleasedReason: booking.holdReleaseReason,
     reminderShown,
@@ -2400,6 +2407,12 @@ export interface BookingListItemBase {
   /** Story 3.7: the on-chain transaction hash once the balance was paid
    * through Pactly (`null` for unpaid or paid-in-cash). */
   balancePaymentTxHash: string | null;
+  /** The anchor's own transaction id for the local-currency (SEP-6)
+   * deposit that funds this booking, `null` when none was started. Lets
+   * support tie a failed or partial deposit back to the booking. Shown to
+   * the booking's client and shop only -- never on the public profile or
+   * proof page. */
+  anchorTransactionId: string | null;
   cancelDeadline: number;
   /** UTC epoch seconds -- the server clock at response time. */
   serverTime: number;
@@ -2476,6 +2489,7 @@ function toBookingListItemBase(
     pendingAction: derivePendingAction(booking, lifecycle?.action),
     balanceState: booking.balanceState,
     balancePaymentTxHash: booking.balancePaymentTxHash,
+    anchorTransactionId: booking.anchorDepositId,
     cancelDeadline: booking.cancelDeadline,
     serverTime: now,
     contractId: booking.escrowContractId,

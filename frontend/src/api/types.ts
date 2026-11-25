@@ -250,6 +250,9 @@ export interface BookingView {
    * through Pactly (`null` for unpaid or paid-in-cash) -- drives the
    * balance row's own Stellar Expert link. */
   balancePaymentTxHash: string | null;
+  /** The anchor's transaction id for the local-currency deposit, `null`
+   * when none was started. Client and shop only. */
+  anchorTransactionId: string | null;
   /** Story 3.8: the client's private note on this booking (visible to the
    * shop and the client on the booking detail page, never on the public
    * profile or discovery). */
@@ -285,6 +288,9 @@ export interface BookingListItemBase {
   /** Story 3.7: the on-chain transaction hash once the balance was paid
    * through Pactly (`null` for unpaid or paid-in-cash). */
   balancePaymentTxHash: string | null;
+  /** The anchor's transaction id for the local-currency deposit, `null`
+   * when none was started. Client and shop only. */
+  anchorTransactionId: string | null;
   /** UTC epoch seconds. */
   cancelDeadline: number;
   /** UTC epoch seconds -- server clock at response time. */

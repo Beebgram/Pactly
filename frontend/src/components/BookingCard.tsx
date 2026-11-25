@@ -45,6 +45,10 @@ export interface BookingCardProps {
    * through Pactly -- drives the balance row's own "View payment record"
    * link. */
   balancePaymentTxHash: string | null;
+  /** The anchor's transaction id for the local-currency deposit -- the
+   * reference support needs to trace a failed or partial bank transfer.
+   * Hidden when absent. */
+  anchorTransactionId?: string | null;
   /** Story 3.6: the signed-in wallet's own session, passed through to
    * {@link BookingActions} -- both pages that render this card already
    * require sign-in to show anything, so this is always present whenever an
@@ -105,6 +109,7 @@ export function BookingCard({
   holdReleasedReason,
   contractId,
   balancePaymentTxHash,
+  anchorTransactionId,
   session,
   onActionSubmitted,
   onUnauthorized,
@@ -159,6 +164,14 @@ export function BookingCard({
             <TryAmount amount={balance.amount} /> · {BALANCE_STATE_LABEL[balanceState]}
           </dd>
         </div>
+        {anchorTransactionId && (
+          <div className="booking-card__amount-row">
+            <dt>Bank transfer reference</dt>
+            <dd className="tabular-nums" style={{ overflowWrap: "anywhere", userSelect: "all" }}>
+              {anchorTransactionId}
+            </dd>
+          </div>
+        )}
       </dl>
 
       {/* Review follow-up: lives here, not in `BookingActions`, which
