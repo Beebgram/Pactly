@@ -16,6 +16,8 @@ export interface Category {
 
 export interface CloseProviderDateResponse {
   date: string;
+  endDate: string;
+  dayCount: number;
   /** UTC epoch seconds of the local day's start/end. */
   rangeStart: number;
   rangeEnd: number;

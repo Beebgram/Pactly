@@ -238,11 +238,12 @@ export function useUpdateProviderAvailability(session: Session | undefined) {
 export function closeProviderDate(
   date: string,
   session: Session,
+  endDate: string = date,
   tzOffsetMinutes = new Date().getTimezoneOffset(),
 ): Promise<CloseProviderDateResponse> {
   return apiPost<CloseProviderDateResponse>(
     "/me/provider/availability/close-date",
-    { date, tzOffsetMinutes },
+    { date, endDate, tzOffsetMinutes },
     session.token,
   );
 }

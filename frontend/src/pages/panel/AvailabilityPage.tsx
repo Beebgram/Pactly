@@ -155,8 +155,6 @@ export function AvailabilityPage() {
   const updateAvailability = useUpdateProviderAvailability(session);
   const updateProfile = useUpdateProviderProfile(session);
   const closedDatesQuery = useClosedDates(session);
-  const closeDateMutation = useCloseDate(session);
-  const reopenDateMutation = useReopenDate(session);
   const { rate } = useTryRate();
 
   // The price is stored in USDC smallest units (AD-7) but typed in TRY.
@@ -173,6 +171,7 @@ export function AvailabilityPage() {
   const [maxBookingDaysInput, setMaxBookingDaysInput] = useState("");
   const [selectedSlots, setSelectedSlots] = useState<Set<number>>(new Set());
   const [closeDate, setCloseDate] = useState("");
+  const [closeEndDate, setCloseEndDate] = useState("");
   const [closeBusy, setCloseBusy] = useState(false);
   const [closeResult, setCloseResult] = useState<Awaited<ReturnType<typeof closeProviderDate>> | undefined>();
   const [closeError, setCloseError] = useState<string | undefined>();
@@ -396,11 +395,17 @@ export function AvailabilityPage() {
 
   async function handleCloseDate(): Promise<void> {
     if (!session || !closeDate) return;
+    const endDate = closeEndDate || closeDate;
+    if (endDate < closeDate) {
+      setCloseResult(undefined);
+      setCloseError("The end date cannot be before the start date.");
+      return;
+    }
     setCloseBusy(true);
     setCloseError(undefined);
     setCloseResult(undefined);
     try {
-      const result = await closeProviderDate(closeDate, session);
+      const result = await closeProviderDate(closeDate, session, endDate);
       setCloseResult(result);
       // The closed date's slots are gone server-side -- refresh the grid so
       // the panel stops showing them as selected.
@@ -804,15 +809,26 @@ export function AvailabilityPage() {
       </section>
 
       <section className="card" style={{ marginTop: "var(--space-6)" }}>
-        <h2 style={{ fontSize: "var(--text-18)", marginTop: 0 }}>Close a whole date</h2>
+        <h2 style={{ fontSize: "var(--text-18)", marginTop: 0 }}>Close dates</h2>
         <p>
-          Closing a date removes its open slots and releases any unpaid holds on that date. Those clients see that you
+          Close one date or a run of dates (up to 31, start and end included). Closing removes those dates' open slots
+          and releases any unpaid holds on them; your weekly pattern after the end date stays as it is. Those clients see that you
           closed the date, and no deposit is taken from them. A booking whose deposit is already locked is never released
           — resolve it from Bookings.
         </p>
         <div className="field">
-          <label htmlFor="close-date">Date to close</label>
+          <label htmlFor="close-date">Start date</label>
           <input id="close-date" type="date" value={closeDate} onChange={(event) => setCloseDate(event.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="close-end-date">End date (optional, inclusive)</label>
+          <input
+            id="close-end-date"
+            type="date"
+            value={closeEndDate}
+            min={closeDate || undefined}
+            onChange={(event) => setCloseEndDate(event.target.value)}
+          />
         </div>
         <button
           type="button"
@@ -820,7 +836,7 @@ export function AvailabilityPage() {
           onClick={() => void handleCloseDate()}
           disabled={closeBusy || closeDate === ""}
         >
-          {closeBusy ? "Closing…" : "Close this date"}
+          {closeBusy ? "Closing…" : closeEndDate && closeEndDate !== closeDate ? "Close these dates" : "Close this date"}
         </button>
 
         {closeError && (
@@ -831,7 +847,7 @@ export function AvailabilityPage() {
         {closeResult && (
           <div className="banner" role="status" style={{ marginTop: "var(--space-4)" }}>
             <p>
-              Closed {closeResult.date}. {closeResult.releasedHoldCount} unpaid{" "}
+              Closed {closeResult.dayCount > 1 ? `${closeResult.date} to ${closeResult.endDate}` : closeResult.date}.{" "}{closeResult.releasedHoldCount} unpaid{" "}
               {closeResult.releasedHoldCount === 1 ? "hold was" : "holds were"} released — no deposit was taken.{" "}
               {closeResult.closedSlotCount} open {closeResult.closedSlotCount === 1 ? "slot was" : "slots were"} removed.
             </p>

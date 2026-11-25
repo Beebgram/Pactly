@@ -29,6 +29,8 @@ import { NotAProviderError } from "./profile.js";
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAY_SECONDS = 24 * 60 * 60;
+/** Longest holiday a single close action may cover, inclusive. */
+export const MAX_CLOSE_RANGE_DAYS = 31;
 /** `Date#getTimezoneOffset`'s own documented range, in minutes. */
 const MIN_TZ_OFFSET_MINUTES = -14 * 60;
 const MAX_TZ_OFFSET_MINUTES = 14 * 60;
@@ -45,15 +47,18 @@ export class BookingOutsideCancellationWindowError extends Error {
 export class InvalidCloseDateError extends Error {
   readonly details: Record<string, string>;
   constructor(details: Record<string, string>) {
-    super("Pick a valid date to close.");
+    super(details.endDate ?? "Pick a valid date to close.");
     this.name = "InvalidCloseDateError";
     this.details = details;
   }
 }
 
 export interface CloseProviderDateInput {
-  /** Local calendar date, `YYYY-MM-DD`. */
+  /** Local calendar date, `YYYY-MM-DD` -- the first day closed. */
   date: string;
+  /** Optional last day closed, inclusive, `YYYY-MM-DD`. Omitted means only
+   * `date`. At most {@link MAX_CLOSE_RANGE_DAYS} days in all. */
+  endDate?: string;
   /** `new Date().getTimezoneOffset()` from the caller's browser -- the same
    * signed-minutes convention `POST /bookings/hold` already uses. Omitted
    * means UTC. */
@@ -62,6 +67,9 @@ export interface CloseProviderDateInput {
 
 export interface CloseProviderDateView {
   date: string;
+  endDate: string;
+  /** Number of calendar dates closed (1 for a single date). */
+  dayCount: number;
   /** UTC epoch seconds of the local day's start/end, echoed so a caller can
    * check exactly which window was closed. */
   rangeStart: number;
@@ -169,7 +177,8 @@ export async function rescheduleLockedBooking(
 
 /**
  * `POST /me/provider/availability/close-date`: resolves the caller's own
- * provider profile, releases the date's active unpaid holds (recording
+ * provider profile and closes one date, or every date from `date` through
+ * `endDate` inclusive (at most 31). Releases those dates' active unpaid holds (recording
  * `shop-closed-date` on them so their clients see why), then removes that
  * date's future open slots. Other dates are untouched. Idempotent: closing
  * an already-closed or hold-free date succeeds and reports zero releases.
@@ -184,13 +193,25 @@ export async function closeProviderDate(
   if (!profile) {
     throw new NotAProviderError();
   }
-  const { rangeStart, rangeEnd } = localDateRange(input.date, input.tzOffsetMinutes ?? 0);
+  const tzOffset = input.tzOffsetMinutes ?? 0;
+  const endDate = input.endDate && input.endDate !== "" ? input.endDate : input.date;
+  const { rangeStart } = localDateRange(input.date, tzOffset);
+  const { rangeEnd } = localDateRange(endDate, tzOffset);
+  if (rangeEnd <= rangeStart) {
+    throw new InvalidCloseDateError({ endDate: "The end date cannot be before the start date." });
+  }
+  const dayCount = Math.round((rangeEnd - rangeStart) / DAY_SECONDS);
+  if (dayCount > MAX_CLOSE_RANGE_DAYS) {
+    throw new InvalidCloseDateError({ endDate: `Close at most ${MAX_CLOSE_RANGE_DAYS} days at once.` });
+  }
 
   const release = await releaseUnpaidHoldsForProviderDate(db, profile.id, rangeStart, rangeEnd, now);
   const closedSlotCount = await closeSlotsInRange(db, profile.id, rangeStart, rangeEnd, now);
 
   return {
     date: input.date,
+    endDate,
+    dayCount,
     rangeStart,
     rangeEnd,
     releasedHoldCount: release.released.length,
