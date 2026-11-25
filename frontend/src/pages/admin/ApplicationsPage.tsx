@@ -141,7 +141,7 @@ export function ApplicationsPage() {
     setSessionExpired(true);
   }
 
-  const unauthorized = applicationsQuery.error instanceof ApiError && applicationsQuery.error.status === 401;
+  const unauthorized = applicationsQuery.error instanceof ApiError && (applicationsQuery.error.status === 401 || applicationsQuery.error.code === "session_expired");
   useEffect(() => {
     if (unauthorized) {
       handleUnauthorized();

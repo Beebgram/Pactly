@@ -240,10 +240,17 @@ export async function requirePactlyAuth(c: Context<{ Variables: Variables }>, ne
     return c.json({ code: "unauthorized", message: "Sign in required." }, 401);
   }
   try {
-    const { walletAddress } = await verifyPactlyJwt(token);
-    c.set("walletAddress", walletAddress);
+    const result = await verifyPactlyJwt(token);
+    c.set("walletAddress", result.walletAddress);
   } catch (error) {
     if (error instanceof PactlyJwtError) {
+      // Check if this was specifically an expired token
+      const cause = (error as Error).cause as Error | undefined;
+      const isExpired = cause && (cause.name === "JWTExpired" || cause.code === "ERR_JWT_EXPIRED");
+      
+      if (isExpired) {
+        return c.json({ code: "session_expired", message: "Session expired. Confirm again to continue." }, 401);
+      }
       return c.json({ code: "unauthorized", message: "Sign in required." }, 401);
     }
     throw error;

@@ -205,7 +205,7 @@ export function ResolutionsPage() {
     );
   }
 
-  const unauthorized = disputesQuery.error instanceof ApiError && disputesQuery.error.status === 401;
+  const unauthorized = disputesQuery.error instanceof ApiError && (disputesQuery.error.status === 401 || disputesQuery.error.code === "session_expired");
   useEffect(() => {
     if (unauthorized) {
       handleUnauthorized();
