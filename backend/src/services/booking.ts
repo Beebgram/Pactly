@@ -214,6 +214,11 @@ export interface BookingProviderSummary {
 /** The AD-13 hold's own duration -- 10 minutes, per the spec's "Always"
  * rule ("blocks the slot for 10 minutes"). */
 export const HOLD_DURATION_SECONDS = 10 * 60;
+const DISPUTE_OPEN_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+
+function getDisputeDeadline(slotStartsAt: number | null): number | null {
+  return slotStartsAt === null ? null : slotStartsAt + DISPUTE_OPEN_WINDOW_SECONDS;
+}
 
 /** Issue #62: the shop has paused new bookings. A new hold is refused
  * (`409 BOOKINGS_PAUSED`); existing locks, releases and disputes never
@@ -584,6 +589,13 @@ export class BookingEscrowStateError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "BookingEscrowStateError";
+  }
+}
+
+export class DisputeWindowClosedError extends Error {
+  constructor(message = "A dispute may only be opened from the appointment time until 7 days afterward.") {
+    super(message);
+    this.name = "DisputeWindowClosedError";
   }
 }
 
@@ -1444,6 +1456,25 @@ export interface OpenDisputeResult extends UnsignedTransaction {
   evidenceHash?: string;
 }
 
+async function requireDisputeWindowOpen(
+  db: Db,
+  booking: Pick<BookingRow, "slotId">,
+  reason: DisputeReason,
+  now: number,
+): Promise<void> {
+  const slot = booking.slotId ? await getSlotById(db, booking.slotId) : undefined;
+  if (!slot) {
+    throw new DisputeWindowClosedError();
+  }
+  if (now < slot.startsAt && (reason === "client-cancel" || reason === "provider-cancel")) {
+    return;
+  }
+  const deadline = getDisputeDeadline(slot.startsAt);
+  if (deadline === null || now < slot.startsAt || now > deadline) {
+    throw new DisputeWindowClosedError();
+  }
+}
+
 /**
  * "Dispute" (client or provider): either side may raise one while the
  * booking is `locked` and no dispute is already open for it -- refused
@@ -1456,7 +1487,9 @@ export interface OpenDisputeResult extends UnsignedTransaction {
  * `reason` outside the caller's own role's whitelist. Refused (typed
  * {@link BookingActionPendingError}) while an earlier dispute build for this
  * booking has already been submitted and the lifecycle has not yet observed
- * it. Pactly itself never opens a dispute (Story 1.8 AC7): `signerAddress`
+ * it. The linked appointment must have started and be within seven days;
+ * the same server-time check runs again before a signed dispute is relayed.
+ * Pactly itself never opens a dispute (Story 1.8 AC7): `signerAddress`
  * is always the caller's own wallet, one of the two parties, never Pactly's.
  *
  * Review round: building the XDR no longer writes `escrow_dispute_openings`
@@ -1507,6 +1540,7 @@ export async function openDispute(
   if (lifecycle.action === "disputed") {
     throw new BookingEscrowStateError(`Booking "${bookingId}" already has an open dispute`);
   }
+  await requireDisputeWindowOpen(db, booking, reason, now);
   if ((reason === "client-no-show" || reason === "provider-no-show") && now <= booking.cancelDeadline) {
     throw new BookingActionPendingError(
       `No-show can only be claimed after the cancellation deadline.`,
@@ -2045,6 +2079,7 @@ export interface BookingView {
   balance: Money;
   price: Money;
   slotStartsAt: number | null;
+  disputeDeadline: number | null;
   cancelDeadline: number;
   /** UTC epoch seconds -- the server clock at response time. Resynced on
    * every refetch so the client's free-cancellation countdown stays
@@ -2143,6 +2178,7 @@ export async function getBookingView(
     balance: { amount: booking.balanceAmount, asset: ASSET },
     price: { amount: (BigInt(booking.depositAmount) + BigInt(booking.balanceAmount)).toString(), asset: ASSET },
     slotStartsAt,
+    disputeDeadline: getDisputeDeadline(slotStartsAt),
     cancelDeadline: booking.cancelDeadline,
     serverTime: now,
     provider: profile
@@ -2301,6 +2337,13 @@ export async function submitSignedTransaction(
     throw new XdrMismatchError();
   }
 
+  if (match.kind === "dispute") {
+    if (!booking.pendingDisputeReason) {
+      throw new BookingEscrowStateError("This dispute has no recorded reason.");
+    }
+    await requireDisputeWindowOpen(db, booking, booking.pendingDisputeReason, now);
+  }
+
   const result = await adapter.submit(signedXdr);
 
   if (match.kind === "deploy" && booking.escrowContractId && booking.escrowDeployTxHash) {
@@ -2396,6 +2439,7 @@ export interface BookingListItemBase {
   /** UTC epoch seconds -- `null` only for a pre-3.4 booking with no
    * `slotId`. */
   slotStartsAt: number | null;
+  disputeDeadline: number | null;
   deposit: Money;
   balance: Money;
   price: Money;
@@ -2481,6 +2525,7 @@ function toBookingListItemBase(
   return {
     id: booking.id,
     slotStartsAt,
+    disputeDeadline: getDisputeDeadline(slotStartsAt),
     deposit: { amount: booking.depositAmount, asset: ASSET },
     balance: { amount: booking.balanceAmount, asset: ASSET },
     price: { amount: (BigInt(booking.depositAmount) + BigInt(booking.balanceAmount)).toString(), asset: ASSET },

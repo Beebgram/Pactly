@@ -26,6 +26,10 @@ export interface BookingCardProps {
   id: string;
   /** UTC epoch seconds -- `null` only for a pre-3.4 booking with no slot. */
   slotStartsAt: number | null;
+  /** UTC epoch seconds -- dispute opening deadline calculated by the server. */
+  disputeDeadline: number | null;
+  /** UTC epoch seconds from the booking payload. */
+  serverTime: number;
   deposit: Money;
   balance: Money;
   escrowState: "locked" | "released" | "refunded" | null;
@@ -99,6 +103,8 @@ export function BookingCard({
   subheading,
   id,
   slotStartsAt,
+  disputeDeadline,
+  serverTime,
   deposit,
   balance,
   escrowState,
@@ -226,6 +232,7 @@ export function BookingCard({
         balance={balance}
         balanceState={balanceState}
         slotStartsAt={slotStartsAt}
+        disputeDeadline={disputeDeadline}
         cancelDeadline={cancelDeadline}
         serverTime={serverTime}
         session={session}
