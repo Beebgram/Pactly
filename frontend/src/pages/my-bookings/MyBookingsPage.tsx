@@ -34,7 +34,7 @@ export function MyBookingsPage() {
           title="My bookings"
           lede="Sign in to see the sessions you've locked a deposit for."
         />
-        <SignInPanel onSignedIn={setSession} />
+        <SignInPanel onSignedIn={setSession} onRateLimited={(waitMs) => setError(`Too many failed sign-in attempts. Please wait ${Math.ceil(waitMs / 1000)} second${Math.ceil(waitMs / 1000) !== 1 ? "s" : ""} before trying again.`)} />
       </div>
     );
   }
