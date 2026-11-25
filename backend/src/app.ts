@@ -68,6 +68,10 @@ import {
   getOwnProviderProfile,
   getPublicProviderProfile,
   setProviderBookingsPaused,
+  suggestProvidersForEmptySearch,
+  suspendProviderProfile,
+  unsuspendProviderProfile,
+  InvalidSuspensionReasonError,
   listCategoriesWithProviderCounts,
   listDiscoverProviders,
   suggestDiscoverQueries,
@@ -86,6 +90,7 @@ import {
   ProviderApplicationPendingError,
   applyAsProvider,
   decideApplication,
+  previewApplicationDeposit,
   getOwnProviderApplication,
   listPendingApplications,
   updateOwnProviderApplication,
@@ -97,6 +102,7 @@ import {
   BookingEscrowStateError,
   BookingHoldExpiredError,
   BookingNotFoundError,
+  DepositAlreadyLandedError,
   BookingsPausedError,
   InvalidDisputeReasonError,
   NothingToPayError,
@@ -151,6 +157,9 @@ import {
 import { config } from "./config.js";
 import { DISPUTE_OUTCOMES, type DisputeOutcome, type DisputeReason } from "./db/schema.js";
 import { getBookingById, setBookingNote, clearBookingNote } from "./db/bookings.js";
+import { getProviderProfileById } from "./db/providerProfiles.js";
+import { getSlotById } from "./db/availabilitySlots.js";
+import { listAdminDecisionAudit } from "./db/adminDecisionAudit.js";
 import {
   AmountOutOfRangeError,
   AnchorAuthError,
@@ -163,6 +172,7 @@ import {
   AnchorUnavailableError,
   QuoteMismatchError,
   QuoteStaleError,
+  UsdcTrustlineMissingError,
 } from "./anchor/errors.js";
 import { fetchIndicativePrice, type Sep38FetchLike } from "./anchor/sep38.js";
 import {
@@ -208,6 +218,7 @@ import {
   isShopSaved,
   getSavedShopsForClient,
 } from "./services/savedShops.js";
+import {
   InvalidReportReasonError,
   ReportRateLimitError,
   ShopNotFoundError,
@@ -388,6 +399,7 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     fetchImpl: options.localDepositDeps?.fetchImpl ?? (quoteFetchImpl as AnchorFetchLike | undefined),
   };
   const usdcTrustlineDeps = options.usdcTrustlineDeps ?? {};
+  const cashOutDeps: CashOutDeps = options.cashOutDeps ?? {};
 
   // Security headers middleware -- sets three API headers (AC1) and ensures
   // no wildcard CORS origin (AC3). Runs before every route.
@@ -2384,12 +2396,38 @@ app.get("/bookings/:id/ics", requirePactlyAuth, async (c) => {
       }
       if (error instanceof BookingEscrowStateError) {
         return c.json({ code: "BOOKING_STATE", message: error.message }, 409);
+      }
+      throw error;
+    }
+  });
+
   // ---------------------------------------------------------------------
   // Saved shops: a client's personal list of shops they want to book again.
   // ---------------------------------------------------------------------
 
   /** A signed-in client saves an approved shop. Idempotent. */
   app.post("/providers/:id/save", requirePactlyAuth, async (c) => {
+    const providerProfileId = c.req.param("id");
+    if (!providerProfileId) {
+      return c.json({ code: "invalid_request", message: "provider id is required." }, 400);
+    }
+
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const result = await saveShop(db, c.get("walletAddress"), providerProfileId, now);
+      return c.json(result, 201);
+    } catch (error) {
+      if (error instanceof SavedShopNotFoundError) {
+        return c.json({ code: "SHOP_NOT_FOUND", message: error.message }, 404);
+      }
+      if (error instanceof ShopNotApprovedError) {
+        return c.json({ code: "SHOP_NOT_APPROVED", message: error.message }, 409);
+      }
+      throw error;
+    }
+  });
+
+  // ---------------------------------------------------------------------
   // Story 5.8: admin category management. Any admin wallet may create a
   // category or hide/show an existing one.
   // ---------------------------------------------------------------------
@@ -2449,17 +2487,6 @@ app.get("/bookings/:id/ics", requirePactlyAuth, async (c) => {
     if (!providerProfileId) {
       return c.json({ code: "invalid_request", message: "provider id is required." }, 400);
     }
-
-    try {
-      const now = Math.floor(Date.now() / 1000);
-      const result = await saveShop(db, c.get("walletAddress"), providerProfileId, now);
-      return c.json(result, 201);
-    } catch (error) {
-      if (error instanceof SavedShopNotFoundError) {
-        return c.json({ code: "SHOP_NOT_FOUND", message: error.message }, 404);
-      }
-      if (error instanceof ShopNotApprovedError) {
-        return c.json({ code: "SHOP_NOT_APPROVED", message: error.message }, 409);
     const body = await c.req.json().catch(() => undefined);
     const reason = typeof body?.reason === "string" ? body.reason : "";
     
@@ -2515,6 +2542,8 @@ app.get("/bookings/:id/ics", requirePactlyAuth, async (c) => {
   app.get("/me/saved-shops", requirePactlyAuth, async (c) => {
     const shops = await getSavedShopsForClient(db, c.get("walletAddress"));
     return c.json({ shops });
+  });
+
   /** Admins list all shop reports, newest first. */
   app.get("/admin/shop-reports", requirePactlyAuth, requireAdmin, async (c) => {
     const reports = await getShopReportsForAdmin(db);

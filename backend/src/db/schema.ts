@@ -106,6 +106,12 @@ export const providerProfiles = sqliteTable("provider_profiles", {
    * shop as not taking bookings and `holdSlot` refuses a new hold; existing
    * bookings, locks, releases and disputes are untouched. */
   bookingsPaused: integer("bookings_paused", { mode: "boolean" }).notNull().default(false),
+  /** An admin suspension (not the shop's own pause). Non-null while the
+   * shop is suspended: it is hidden from discovery and search and cannot
+   * take new bookings. Clearing both puts the shop back into discovery
+   * with no re-approval. Existing bookings are never touched. */
+  suspendedAt: integer("suspended_at"),
+  suspensionReason: text("suspension_reason"),
   /** Increases only on the chain's `released` event (FR20); never written
    * by hand outside the event worker's own bookkeeping. */
   verifiedSessionCount: integer("verified_session_count").notNull().default(0),
@@ -756,7 +762,7 @@ export const providerBreaks = sqliteTable(
   (table) => [unique().on(table.providerProfileId, table.weekday, table.startMinute)],
 );
 
-export const WEBAUTHN_CHALLENGE_KINDS = ["register", "login"] as const;
+export const WEBAUTHN_CHALLENGE_KINDS = ["register", "login", "assert"] as const;
 export type WebauthnChallengeKind = (typeof WEBAUTHN_CHALLENGE_KINDS)[number];
 
 /** A pending passkey ceremony's challenge: issued by the `/options` step,
@@ -842,6 +848,8 @@ export const savedShops = sqliteTable(
   },
   (table) => [unique().on(table.clientWalletAddress, table.providerProfileId)],
 );
+
+/**
  * Shop reports: a signed-in client can report a shop listing to admins.
  * One report per client per shop per day. Does not change the shop's status.
  */
@@ -878,6 +886,43 @@ export const waitlistEntries = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (table) => [unique().on(table.providerProfileId, table.clientWalletAddress, table.date)],
+);
+
+/**
+ * Issue #31: one in-app event row per party per booking-level action
+ * (lock, release, dispute, resolve). Each party has a page of their own
+ * events, newest first, linking to the booking.
+ */
+export const escrowEvents = sqliteTable("escrow_events", {
+  id: text("id").primaryKey(),
+  bookingId: text("booking_id")
+    .notNull()
+    .references(() => bookings.id),
+  /** Which party this event row is visible to -- the client's wallet or the
+   * provider's wallet on this booking. */
+  walletAddress: text("wallet_address").notNull(),
+  /** `lock` | `release` | `dispute` | `resolve`. */
+  type: text("type", { enum: ["lock", "release", "dispute", "resolve"] }).notNull(),
+  /** UTC epoch seconds -- the event's own wall-clock when it was recorded. */
+  createdAt: integer("created_at").notNull(),
+});
+
+/**
+ * Issue #7: one row per escrow contract id a deploy ever returned for a
+ * booking, so a superseded id can be seen but never used to move money.
+ */
+export const escrowContractDeployments = sqliteTable(
+  "escrow_contract_deployments",
+  {
+    bookingId: text("booking_id").notNull(),
+    /** The Trustless Work escrow's own identity (a Soroban `C...`) exactly
+     * as `deploy` returned it. */
+    contractId: text("contract_id").notNull(),
+    /** UTC epoch seconds -- when this contract id was persisted for the
+     * booking, the same clock `bookings.deploy_submitted_at` uses. */
+    deployedAt: integer("deployed_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.bookingId, table.contractId] })],
 );
 
 export type WaitlistEntryRow = typeof waitlistEntries.$inferSelect;

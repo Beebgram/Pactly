@@ -31,6 +31,7 @@ import {
   insertProviderProfile,
   setProviderProfileApprovedSync,
   updateProviderProfileFromApplication,
+  setProviderProfileApproved,
 } from "../db/providerProfiles.js";
 import type { ProviderApplicationState } from "../db/schema.js";
 import { requireUsdcTrustline, type UsdcTrustlineDeps } from "../anchor/trustline.js";

@@ -458,6 +458,7 @@ export function runMigrations(sqlite: Database): void {
   // Mark client arrived: the shop marks when a client walks in.
   if (!hasColumn(sqlite, "bookings", "arrived_at")) {
     sqlite.exec(`ALTER TABLE bookings ADD COLUMN arrived_at INTEGER`);
+  }
   // Optional client email for the shop's post-release mailto draft (#47).
   if (!hasColumn(sqlite, "bookings", "client_email")) {
     sqlite.exec(`ALTER TABLE bookings ADD COLUMN client_email TEXT`);
@@ -482,4 +483,23 @@ export function runMigrations(sqlite: Database): void {
   if (!hasColumn(sqlite, "provider_profiles", "buffer_minutes")) {
     sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN buffer_minutes INTEGER NOT NULL DEFAULT 0`);
   }
+  // Issue #31: one event row per party per booking-level action.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS escrow_events (
+      id TEXT PRIMARY KEY,
+      booking_id TEXT NOT NULL REFERENCES bookings(id),
+      wallet_address TEXT NOT NULL,
+      type TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )
+  `);
+  // Issue #7: every escrow contract id a deploy ever returned for a booking.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS escrow_contract_deployments (
+      booking_id TEXT NOT NULL,
+      contract_id TEXT NOT NULL,
+      deployed_at INTEGER NOT NULL,
+      PRIMARY KEY (booking_id, contract_id)
+    )
+  `);
 }

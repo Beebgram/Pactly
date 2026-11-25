@@ -99,7 +99,14 @@ import {
   listLockedBookingStarts,
   listOfferedSlotsInRange,
 } from "./availability.js";
-import { recordEscrowDisputeResolution } from "../db/escrowDisputeResolutions.js";
+import {
+  getEscrowDisputeResolution,
+  recordEscrowDisputeResolution,
+  recordEscrowDisputeResolutionSync,
+} from "../db/escrowDisputeResolutions.js";
+import { insertAdminDecisionAuditSync } from "../db/adminDecisionAudit.js";
+import { recordEscrowEventForBothParties } from "../db/escrowEvents.js";
+import { listContractDeployments, recordContractDeployment } from "../db/escrowContractDeployments.js";
 import { escrowDisputeOpenings, bookings } from "../db/schema.js";
 import { getEscrowDisputeOpening, getEscrowDisputeOpeningsForBookings, recordEscrowDisputeOpening } from "../db/escrowDisputeOpenings.js";
 import { getProviderProfileById, getProviderProfileByWallet } from "../db/providerProfiles.js";
@@ -657,6 +664,20 @@ export class DisputeAlreadyResolvedError extends Error {
   }
 }
 
+/** Refuses {@link SlotInPastError} when the booking's slot has already
+ * started (or is starting right now) according to the server clock.
+ * This check applies to `lockDeposit` and `fundDeposit` -- a hold may have
+ * been created when the slot was in the future, but locking/funding must
+ * be refused once the slot start time has passed. */
+async function requireSlotNotInPast(db: Db, booking: BookingRow, now: number): Promise<void> {
+  if (booking.slotId !== null) {
+    const slot = await getSlotById(db, booking.slotId);
+    if (slot && slot.startsAt <= now) {
+      throw new SlotInPastError(slot.startsAt, now);
+    }
+  }
+}
+
 async function requireBooking(db: Db, bookingId: string): Promise<BookingRow> {
   const booking = await getBookingById(db, bookingId);
   if (!booking) {
@@ -1172,12 +1193,17 @@ export async function withdrawDispute(
     }
   }
   
-  // If the dispute is already resolved (escrowState is not "disputed"), reject withdrawal
-  if (booking.escrowState !== "disputed") {
-    // If it's already locked (previously withdrawn), this is a safe no-op
-    if (booking.escrowState === "locked") {
-      const opening = await getEscrowDisputeOpening(db, bookingId);
-      return { bookingId, escrowState: "locked", withdrawnAt: opening?.withdrawnAt ?? null };
+  // Only an *open* dispute can be withdrawn. `escrow_state` itself never
+  // reads "disputed" (AD-3 keeps it locked/released/refunded), so the open
+  // dispute is the reconciler's lifecycle action or a still-pending local
+  // dispute; anything else is either already withdrawn (a safe no-op) or
+  // already resolved by an admin.
+  const currentLifecycle = await getEscrowLifecycle(db, bookingId);
+  const disputeIsOpen = currentLifecycle?.action === "disputed" || booking.pendingDisputeOpenerWallet !== null;
+  if (!disputeIsOpen) {
+    const opening = await getEscrowDisputeOpening(db, bookingId);
+    if (opening?.withdrawnAt != null) {
+      return { bookingId, escrowState: "locked", withdrawnAt: opening.withdrawnAt };
     }
     throw new DisputeAlreadyResolvedError();
   }
@@ -2058,6 +2084,10 @@ export interface BookingView {
   /** Issue #35: true when this read triggered showing a reminder (appointment
    * day-before notice). False when already shown or conditions not met. */
   reminderShown: boolean;
+  /** Issue #44: the wallet that opened the open dispute, so the withdrawal
+   * button only shows to the party who may use it. `null` when no dispute is
+   * open (or when nothing about its opener was recorded). */
+  disputeOpenedByWallet: string | null;
 }
 
 /** `GET /bookings/:id`'s own response shape: the booking's amounts (each

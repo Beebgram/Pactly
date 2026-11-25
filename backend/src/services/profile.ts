@@ -21,7 +21,9 @@ import {
   listApprovedProviderProfiles,
   listApprovedProviderProfilesForDiscover,
   setProviderProfileBookingsPaused,
+  setProviderProfileSuspension,
   updateProviderProfileRules,
+  updateProviderProfileTimezone,
   updateProviderProfileText as persistProviderProfileText,
   type ProviderProfileRow,
 } from "../db/providerProfiles.js";
@@ -33,7 +35,18 @@ import {
 } from "../db/availabilitySlots.js";
 import { getCategoryById, getCategoryBySlug, listCategories, listVisibleCategories, type CategoryRow } from "../db/categories.js";
 import type { Db } from "../db/client.js";
-import { listEarliestOfferedSlotsByProvider, listOfferedSlots } from "./availability.js";
+import {
+  assertBreaksWithinRanges,
+  filterSlotsOutsideBreaks,
+  listEarliestOfferedSlotsByProvider,
+  listOfferedSlots,
+  validateBreaks,
+  workingRangesForSlots,
+  type ProviderBreak,
+} from "./availability.js";
+import { listProviderBreaks, replaceProviderBreaks } from "../db/providerBreaks.js";
+import { buildPublicHours, type PublicDayHours } from "./publicHours.js";
+import { isValidTimeZone } from "./timezone.js";
 import { isWithinBookingWindow } from "./bookingWindow.js";
 
 /** Pactly's only supported asset for now (matches `services/booking.ts`'s
@@ -387,8 +400,6 @@ export interface ProviderProfileView {
 export function buildProviderProfileView(
   profile: ProviderProfileRow,
   category: CategoryRow,
-  slots: AvailabilitySlotRow[],
-  reviews: ReviewView[] = [],
   slots: Array<Pick<AvailabilitySlotRow, "startsAt"> | number>,
 ): ProviderProfileView {
   let languages: string[] = [];
@@ -422,6 +433,8 @@ export function buildProviderProfileView(
     verifiedSessionCount: profile.verifiedSessionCount,
     providerCancellationCount: profile.providerCancellationCount,
     isApproved: profile.isApproved,
+    bookingsPaused: profile.bookingsPaused,
+    timezone: profile.timezone,
     slots: slots.map((slot) => (typeof slot === "number" ? slot : slot.startsAt)),
   };
 }
@@ -935,6 +948,11 @@ export async function listDiscoverProviders(
 
   const allCategories = await listCategories(db);
   const categoryById = new Map(allCategories.map((row) => [row.id, row]));
+  const weeklyPatternSlotsByProvider = await listWeeklyPatternSlotsByProvider(
+    db,
+    profiles.map((profile) => profile.id),
+    now,
+  );
   const earliestSlotsByProvider = await listEarliestOfferedSlotsByProvider(
     db,
     profiles.map((profile) => ({
