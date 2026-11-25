@@ -140,7 +140,11 @@ export function BookingPage() {
   // 2026-09 pivot: the anchor bank transfer is the only way to pay the
   // deposit -- there is no payment-method choice any more, so the local
   // transfer state below is always the live path once a hold exists.
+  // Issue #145: intake answers for this booking
+  const [intakeAnswers, setIntakeAnswers] = useState<Record<string, string>>({});
+  const [intakeLoading, setIntakeLoading] = useState(false);
   const [localDeposit, setLocalDeposit] = useState<LocalDepositView | undefined>();
+  const [clientEmail, setClientEmail] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
   const [localNotice, setLocalNotice] = useState<string | undefined>();
   const [lockWalletConfirm, setLockWalletConfirm] = useState<
@@ -1157,11 +1161,46 @@ export function BookingPage() {
                   onChange={(event) => setClientEmail(event.target.value)}
                 />
               </div>
+              <div className="field" style={{ marginTop: "var(--space-4)" }}>
+                <label htmlFor="booking-client-email">Client email (optional)</label>
+                <input
+                  id="booking-client-email"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={clientEmail}
+                  onChange={(event) => setClientEmail(event.target.value)}
+                />
+              </div>
+              <div className="field" style={{ marginTop: "var(--space-4)" }}>
+                <label htmlFor="booking-intake-questions">Intake questions</label>
+                {profile.intakeQuestions && profile.intakeQuestions.length > 0 ? (
+                  <div>
+                    {profile.intakeQuestions.map((question, i) => (
+                      <div key={question.id} style={{ marginBottom: "var(--space-2)", display: "flex", alignItems: "center" }}>
+                        <span style={{ width: "120px" }}>{question.text}</span>
+                        <input
+                          type="text"
+                          value={intakeAnswers[question.id] || ""}
+                          onChange={(event) => setIntakeAnswers({...intakeAnswers, [question.id]: event.target.value})}
+                          disabled={question.isRequired}
+                          style={{ marginLeft: "var(--space-2)", flex: 1 }}
+                        />
+                        {question.isRequired && !intakeAnswers[question.id] && (
+                          <span style={{ color: "var(--error)", fontSize: "var(--text-12)" }}>* Required</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No intake questions for this provider.</p>
+                )}
+              </div>
               <button type="button" className="button-primary" onClick={ensureSessionAndHold} disabled={connecting || holdMutation.isPending} aria-label={session ? "Hold this slot" : "Sign in and hold this slot"}>
                 {connecting ? "Signing you in…" : holdMutation.isPending ? "Holding your slot…" : session ? "Hold this slot" : "Sign in and hold this slot"}
               </button>
             </div>
-          )}
+            )}
 
           {hold && !isLocked && (
             <div className="booking-pay">

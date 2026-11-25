@@ -55,6 +55,7 @@ const STATEMENTS: readonly string[] = [
     suspended_at INTEGER,
     suspension_reason TEXT,
     bookings_paused INTEGER NOT NULL DEFAULT 0,
+    intake_answers TEXT NOT NULL DEFAULT '[]',
     verified_session_count INTEGER NOT NULL DEFAULT 0,
     provider_cancellation_count INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
