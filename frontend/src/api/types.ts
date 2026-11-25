@@ -232,6 +232,7 @@ export interface BookingView {
   balance: Money;
   price: Money;
   slotStartsAt: number | null;
+  disputeDeadline: number | null;
   cancelDeadline: number;
   /** UTC epoch seconds -- server clock at response time. Resynced on every
    * refetch so the free-cancellation countdown stays aligned with the
@@ -267,6 +268,7 @@ export interface BookingListItemBase {
   id: string;
   /** UTC epoch seconds -- `null` only for a pre-3.4 booking with no slot. */
   slotStartsAt: number | null;
+  disputeDeadline: number | null;
   deposit: Money;
   balance: Money;
   price: Money;

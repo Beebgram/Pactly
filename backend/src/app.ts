@@ -97,6 +97,7 @@ import {
   BookingEscrowStateError,
   BookingHoldExpiredError,
   BookingNotFoundError,
+  DisputeWindowClosedError,
   BookingsPausedError,
   InvalidDisputeReasonError,
   NothingToPayError,
@@ -1354,6 +1355,9 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
       if (error instanceof XdrMismatchError) {
         return c.json({ code: "XDR_MISMATCH", message: error.message }, 409);
       }
+      if (error instanceof DisputeWindowClosedError) {
+        return c.json({ code: "DISPUTE_WINDOW_CLOSED", message: error.message }, 409);
+      }
       if (error instanceof EscrowApiError || error instanceof EscrowRequestError || error instanceof EscrowConfigError) {
         const response = escrowErrorResponse(error);
         return c.json({ code: response.code, message: response.message }, response.status);
@@ -2064,6 +2068,9 @@ app.get("/bookings/:id/ics", requirePactlyAuth, async (c) => {
       }
       if (error instanceof InvalidDisputeReasonError) {
         return c.json({ code: "INVALID_REASON", message: error.message }, 400);
+      }
+      if (error instanceof DisputeWindowClosedError) {
+        return c.json({ code: "DISPUTE_WINDOW_CLOSED", message: error.message }, 409);
       }
       if (error instanceof BookingActionPendingError) {
         return c.json({ code: "ACTION_PENDING", message: error.message }, 409);

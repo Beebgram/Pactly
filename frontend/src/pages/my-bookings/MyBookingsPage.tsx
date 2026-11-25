@@ -98,6 +98,8 @@ export function MyBookingsPage() {
               heading={booking.provider.displayName}
               subheading={booking.provider.title}
               slotStartsAt={booking.slotStartsAt}
+              disputeDeadline={booking.disputeDeadline}
+              serverTime={booking.serverTime}
               deposit={booking.deposit}
               balance={booking.balance}
               escrowState={booking.escrowState}
@@ -134,6 +136,7 @@ export function MyBookingsPage() {
                 heading={booking.provider.displayName}
                 subheading={booking.provider.title}
                 slotStartsAt={booking.slotStartsAt}
+                disputeDeadline={booking.disputeDeadline}
                 deposit={booking.deposit}
                 balance={booking.balance}
                 escrowState={booking.escrowState}

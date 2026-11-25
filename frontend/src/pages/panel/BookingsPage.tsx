@@ -217,6 +217,7 @@ export function BookingsPage() {
                         balance={booking.balance}
                         balanceState={booking.balanceState}
                         slotStartsAt={booking.slotStartsAt}
+                        disputeDeadline={booking.disputeDeadline}
                         cancelDeadline={booking.cancelDeadline}
                         serverTime={booking.serverTime}
                         session={session}
@@ -254,6 +255,7 @@ export function BookingsPage() {
                 heading="Client id"
                 subheading={shortenStellarId(booking.clientWalletAddress)}
                 slotStartsAt={booking.slotStartsAt}
+                disputeDeadline={booking.disputeDeadline}
                 deposit={booking.deposit}
                 balance={booking.balance}
                 escrowState={booking.escrowState}
@@ -289,6 +291,7 @@ export function BookingsPage() {
                 heading="Client id"
                 subheading={shortenStellarId(booking.clientWalletAddress)}
                 slotStartsAt={booking.slotStartsAt}
+                disputeDeadline={booking.disputeDeadline}
                 deposit={booking.deposit}
                 balance={booking.balance}
                 escrowState={booking.escrowState}
