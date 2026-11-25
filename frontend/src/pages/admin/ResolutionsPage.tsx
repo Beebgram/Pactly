@@ -200,7 +200,7 @@ export function ResolutionsPage() {
             <p>Your session ended. Sign in again to continue.</p>
           </div>
         )}
-        <SignInPanel onSignedIn={handleSignedIn} />
+        <SignInPanel onSignedIn={handleSignedIn} onRateLimited={(waitMs) => setError(`Too many failed sign-in attempts. Please wait ${Math.ceil(waitMs / 1000)} second${Math.ceil(waitMs / 1000) !== 1 ? "s" : ""} before trying again.`)} />
       </div>
     );
   }

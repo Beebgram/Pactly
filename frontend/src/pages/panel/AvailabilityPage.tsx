@@ -424,7 +424,7 @@ export function AvailabilityPage() {
           title="Availability & rules"
           lede="Sign in to manage your price, deposit rate, cancellation window and open slots."
         />
-        <SignInPanel onSignedIn={setSession} />
+        <SignInPanel onSignedIn={setSession} onRateLimited={(waitMs) => setError(`Too many failed sign-in attempts. Please wait ${Math.ceil(waitMs / 1000)} second${Math.ceil(waitMs / 1000) !== 1 ? "s" : ""} before trying again.`)} />
       </div>
     );
   }

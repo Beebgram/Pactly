@@ -731,6 +731,10 @@ export const passkeyCredentials = sqliteTable("passkey_credentials", {
   /** JSON-encoded array of transport hints (`["internal"]`, ...). */
   transports: text("transports").notNull().default("[]"),
   createdAt: integer("created_at").notNull(),
+  /** Count of failed passkey prompt attempts. Reset on successful sign-in. */
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  /** Epoch ms when the failure counter was last reset. Used to compute wait time. */
+  failuresResetAt: integer("failures_reset_at"),
 });
 
 /**
