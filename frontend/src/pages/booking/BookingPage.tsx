@@ -1382,3 +1382,51 @@ function escrowStateLabel(phase: DisplayPhase): string {
 function escrowStateDetail(phase: DisplayPhase): string | undefined {
   return phase === "deployed" ? "Your deposit is not in it yet." : undefined;
 }
+
+/** Issue #133: set the browser title to include the shop name and booking status */
+useEffect(() => {
+  const shopName = hold?.provider.displayName ?? profile.displayName ?? "Pactly";
+  let statusWord = "";
+  switch (phase) {
+    case "idle":
+      statusWord = "Hold the slot";
+      break;
+    case "building-deploy":
+      statusWord = "Building deploy";
+      break;
+    case "confirming-escrow":
+      statusWord = "Awaiting confirmation";
+      break;
+    case "awaiting-deploy-signature":
+      statusWord = "Create your escrow";
+      break;
+    case "submitting-deploy":
+      statusWord = "Deploying";
+      break;
+    case "deploy-failed":
+      statusWord = "Deploy failed";
+      break;
+    case "deployed":
+      statusWord = "Deployed";
+      break;
+    case "building-fund":
+      statusWord = "Building fund";
+      break;
+    case "awaiting-fund-signature":
+      statusWord = "Lock your deposit";
+      break;
+    case "submitting-fund":
+      statusWord = "Funding";
+      break;
+    case "reconciling":
+      statusWord = "Reconciling";
+      break;
+    default:
+      statusWord = "Pactly";
+  }
+  if (hold) {
+    document.title = `${shopName} - ${statusWord}`;
+  } else {
+    document.title = "Pactly";
+  }
+}, [hold, phase, shopName]);
