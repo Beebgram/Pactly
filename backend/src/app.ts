@@ -995,6 +995,7 @@ export function createApp(db: Db, options: CreateAppOptions = {}): App {
     try {
       const result = await closeProviderDate(db, c.get("walletAddress"), {
         date: typeof body?.date === "string" ? body.date : "",
+        ...(typeof body?.endDate === "string" ? { endDate: body.endDate } : {}),
         ...(typeof body?.tzOffsetMinutes === "number" ? { tzOffsetMinutes: body.tzOffsetMinutes } : {}),
       });
       return c.json(result);
