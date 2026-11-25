@@ -1485,6 +1485,10 @@ export async function openDispute(
   if (evidenceHash !== "" && !/^[0-9a-f]{64}$/.test(evidenceHash)) {
     throw new InvalidDisputeReasonError("The evidence hash must be 64 lowercase hex characters.");
   }
+  const trimmedNote = note?.trim();
+  if (trimmedNote !== undefined && trimmedNote.length > 500) {
+    throw new InvalidDisputeReasonError("The dispute note must be 500 characters or less.");
+  }
   if (booking.escrowState !== "locked" || !booking.escrowContractId) {
     throw new BookingEscrowStateError(
       `Booking "${bookingId}" must be locked with a persisted escrow contractId to open a dispute (escrowState is "${booking.escrowState}")`,
@@ -1510,10 +1514,10 @@ export async function openDispute(
   const result = await adapter.startDispute({ contractId: booking.escrowContractId, signerAddress: walletAddress, reason });
   const suggestedOutcome = computeSuggestedOutcome(reason, booking, now);
   const providerAddress = await requireProviderAddress(db, booking);
-  await setPendingDispute(db, bookingId, { txHash: result.txHash, reason, openerWallet: walletAddress, openerRole: role, note: note || undefined, evidenceHash: evidenceHash || undefined });
+  await setPendingDispute(db, bookingId, { txHash: result.txHash, reason, openerWallet: walletAddress, openerRole: role, note: trimmedNote || undefined, evidenceHash: evidenceHash || undefined });
   // Issue #31: record a "dispute" event for both parties.
   await recordEscrowEventForBothParties(db, booking.id, booking.clientWalletAddress, providerAddress, "dispute", now);
-  return { ...result, reason, suggestedOutcome, note: note || undefined, evidenceHash: evidenceHash || undefined };
+  return { ...result, reason, suggestedOutcome, note: trimmedNote || undefined, evidenceHash: evidenceHash || undefined };
 }
 
 export interface AdminDisputeListItem {

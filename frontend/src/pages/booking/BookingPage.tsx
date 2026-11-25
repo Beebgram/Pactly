@@ -1080,6 +1080,20 @@ export function BookingPage() {
               <span>Free cancellation until</span>
               <strong>{freeCancellationEnded ? "already passed" : formatDeadline(cancelDeadline)}</strong>
             </div>
+            {hold && !isLocked && (
+              <div className="booking-summary__row">
+                <span>Dispute note</span>
+                <textarea
+                  className="textarea"
+                  placeholder="Add a note about this dispute (max 500 chars, spaces trimmed)"
+                  value={disputeNote}
+                  onChange={(e) => setDisputeNote(e.target.value)}
+                  maxLength={500}
+                  disabled={lockInFlight}
+                />
+                <span className="char-counter">{disputeNoteLength}/500</span>
+              </div>
+            )}
           </div>
 
           <div className="booking-summary-note">
