@@ -1213,6 +1213,13 @@ export function BookingPage() {
           )}
         </section>
 
+        {booking.data?.anchorTransactionId && (
+          <p className="escrow-lane__notice" style={{ overflowWrap: "anywhere" }}>
+            Bank transfer reference:{" "}
+            <span className="tabular-nums" style={{ userSelect: "all" }}>{booking.data.anchorTransactionId}</span>
+          </p>
+        )}
+
         <EscrowLane
           depositAmount={depositAmount}
           holdCountdownLabel={hold && !isLocked ? formatCountdown(holdSecondsLeft) : undefined}

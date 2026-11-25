@@ -1009,9 +1009,15 @@ export interface AnchorDepositSnapshot {
   updatedAt: number;
 }
 
-/** Story 2.4: persists the SEP-6 deposit snapshot on the booking. */
-export async function setAnchorDeposit(db: Db, bookingId: string, snapshot: AnchorDepositSnapshot): Promise<void> {
-  await db
+/** Story 2.4: persists the SEP-6 deposit snapshot on the booking.
+ *
+ * The stored `anchorDepositId` is the only link between the booking and the
+ * anchor's own records, so a deposit that already completed is never
+ * replaced by a different id (a later retry attempt cannot orphan the
+ * transfer that actually funded the booking). Refreshing the same id is
+ * always allowed. Returns `false` when the write was refused. */
+export async function setAnchorDeposit(db: Db, bookingId: string, snapshot: AnchorDepositSnapshot): Promise<boolean> {
+  const result = await db
     .update(bookings)
     .set({
       anchorDepositId: snapshot.id,
@@ -1022,7 +1028,18 @@ export async function setAnchorDeposit(db: Db, bookingId: string, snapshot: Anch
       anchorDepositAmountIn: snapshot.amountIn ?? null,
       anchorDepositUpdatedAt: snapshot.updatedAt,
     })
-    .where(eq(bookings.id, bookingId));
+    .where(
+      and(
+        eq(bookings.id, bookingId),
+        or(
+          isNull(bookings.anchorDepositId),
+          eq(bookings.anchorDepositId, snapshot.id),
+          isNull(bookings.anchorDepositStatus),
+          ne(bookings.anchorDepositStatus, "completed"),
+        ),
+      ),
+    );
+  return result.changes > 0;
 }
 
 /** Story 2.4: extend the hold while a local-currency transfer is still
