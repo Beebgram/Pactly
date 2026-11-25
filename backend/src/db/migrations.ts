@@ -94,6 +94,7 @@ const STATEMENTS: readonly string[] = [
     escrow_deploy_tx_hash TEXT,
     escrow_fund_tx_hash TEXT,
     deploy_submitted_at INTEGER,
+    anchor_quote_id TEXT,
     created_at INTEGER NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS reviews (
@@ -337,6 +338,19 @@ export function runMigrations(sqlite: Database): void {
   // against, and the timestamp marking a deploy as actually submitted.
   if (!hasColumn(sqlite, "bookings", "escrow_deploy_tx_hash")) {
     sqlite.exec(`ALTER TABLE bookings ADD COLUMN escrow_deploy_tx_hash TEXT`);
+  }
+  // Issue #7: the SEP-38 quote id persisted at lock time so the booking
+  // retains its reference even if the quote later ages out or the deposit
+  // fails. Nullable since pre-existing bookings have no quote id.
+  if (!hasColumn(sqlite, "bookings", "anchor_quote_id")) {
+    sqlite.exec(`ALTER TABLE bookings ADD COLUMN anchor_quote_id TEXT`);
+  }
+  // Issue #128: notice text + end date on provider profile
+  if (!hasColumn(sqlite, "provider_profiles", "notice_text")) {
+    sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN notice_text TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!hasColumn(sqlite, "provider_profiles", "notice_end_date")) {
+    sqlite.exec(`ALTER TABLE provider_profiles ADD COLUMN notice_end_date INTEGER`);
   }
   if (!hasColumn(sqlite, "bookings", "escrow_fund_tx_hash")) {
     sqlite.exec(`ALTER TABLE bookings ADD COLUMN escrow_fund_tx_hash TEXT`);

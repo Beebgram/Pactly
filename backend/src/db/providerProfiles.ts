@@ -275,6 +275,8 @@ export interface ProviderProfileTextValues {
   languages: string;
   sessionLengthMinutes: number;
   location: string;
+  noticeText: string;
+  noticeEndDate: number;
 }
 
 export async function updateProviderProfileText(db: Db, id: string, values: ProviderProfileTextValues): Promise<void> {
@@ -286,6 +288,8 @@ export async function updateProviderProfileText(db: Db, id: string, values: Prov
       languages: values.languages,
       sessionLengthMinutes: values.sessionLengthMinutes,
       location: values.location,
+      noticeText: values.noticeText,
+      noticeEndDate: values.noticeEndDate,
     })
     .where(eq(providerProfiles.id, id));
   if (result.changes === 0) {

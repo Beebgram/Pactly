@@ -112,6 +112,12 @@ export const providerProfiles = sqliteTable("provider_profiles", {
    * with no re-approval. Existing bookings are never touched. */
   suspendedAt: integer("suspended_at"),
   suspensionReason: text("suspension_reason"),
+  /** Issue #128: notice text shown on public profile and booking page
+   * until `noticeEndDate`. Non-null means the notice is active. */
+  noticeText: text("notice_text").notNull().default(''),
+  /** Issue #128: end date (epoch seconds) after which the notice is no longer
+   * shown. Past this date the notice is cleared automatically. */
+  noticeEndDate: integer("notice_end_date"),
   /** Increases only on the chain's `released` event (FR20); never written
    * by hand outside the event worker's own bookkeeping. */
   verifiedSessionCount: integer("verified_session_count").notNull().default(0),
@@ -179,7 +185,7 @@ export const providerClosedDates = sqliteTable(
  * until the event worker processes the booking's first event -- the row is
  * written before the chain call (AD-13's hold), so it exists before any
  * event about it can arrive. */
-export const ESCROW_STATES = ["locked", "released", "refunded"] as const;
+export const ESCROW_STATES = ["locked", "disputed", "released", "refunded"] as const;
 export type EscrowState = (typeof ESCROW_STATES)[number];
 
 export const BALANCE_STATES = ["unpaid", "paid_platform", "paid_cash"] as const;
@@ -251,6 +257,13 @@ export const bookings = sqliteTable("bookings", {
    * earlier deploy may already have landed and been funded.
    */
   escrowContractId: text("escrow_contract_id"),
+  /**
+   * Issue #7: the SEP-38 quote id that was used to generate the local-currency
+   * deposit amount. Persisted at lock time so the booking retains its reference
+   * even if the quote later ages out or the deposit fails. The first id is kept
+   * on re-lock; persists even if deposit later fails.
+   */
+  anchorQuoteId: text("anchor_quote_id"),
   /**
    * Issue #6: the in-flight first-deploy claim's own token. `lockDeposit`
    * takes this claim with one conditioned `UPDATE` *before* it calls the

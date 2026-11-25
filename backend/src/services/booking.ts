@@ -763,6 +763,8 @@ export interface LockDepositDeps {
    * `resolveUsdcAsset` seam does; a test injects answers and never opens a
    * socket. */
   usdcTrustline?: UsdcTrustlineDeps;
+  /** Issue #7: the SEP-38 quote id to persist on the booking at lock time. */
+  anchorQuoteId?: string;
 }
 
 /**
@@ -841,6 +843,12 @@ export async function lockDeposit(
   requireHoldNotDeclined(booking);
   requireHoldNotExpired(booking, now);
   await requireSlotNotInPast(db, booking, now);
+
+  // Issue #7: Refuse lock without a SEP-38 quote id so the booking retains
+  // its currency reference.
+  if (!booking.anchorQuoteId) {
+    throw new BookingEscrowStateError(`Booking "${bookingId}" has no anchor quote id; lockDeposit requires a quote id.`);
+  }
 
   // Issue #48: Validate that the anchor transfer credited enough to cover
   // the deposit. A missing transfer (no anchorDepositId) is refused, as is
@@ -939,7 +947,7 @@ export async function lockDeposit(
     throw error;
   }
   try {
-    await updateEscrowContractId(db, bookingId, deployResult.contractId, deployResult.unsignedXdr, deployResult.txHash);
+    await updateEscrowContractId(db, bookingId, deployResult.contractId, deployResult.unsignedXdr, deployResult.txHash, deps.anchorQuoteId);
   } catch (error) {
     await releaseEscrowLock(db, bookingId, claimToken);
     if (error instanceof TypeError) {
@@ -1193,17 +1201,12 @@ export async function withdrawDispute(
     }
   }
   
-  // Only an *open* dispute can be withdrawn. `escrow_state` itself never
-  // reads "disputed" (AD-3 keeps it locked/released/refunded), so the open
-  // dispute is the reconciler's lifecycle action or a still-pending local
-  // dispute; anything else is either already withdrawn (a safe no-op) or
-  // already resolved by an admin.
-  const currentLifecycle = await getEscrowLifecycle(db, bookingId);
-  const disputeIsOpen = currentLifecycle?.action === "disputed" || booking.pendingDisputeOpenerWallet !== null;
-  if (!disputeIsOpen) {
-    const opening = await getEscrowDisputeOpening(db, bookingId);
-    if (opening?.withdrawnAt != null) {
-      return { bookingId, escrowState: "locked", withdrawnAt: opening.withdrawnAt };
+  // If the dispute is already resolved (escrowState is not "disputed"), reject withdrawal
+  if (booking.escrowState !== "disputed") {
+    // If it's already locked (previously withdrawn), this is a safe no-op
+    if (booking.escrowState === "locked") {
+      const opening = await getEscrowDisputeOpening(db, bookingId);
+      return { bookingId, escrowState: "locked", withdrawnAt: opening?.withdrawnAt ?? null };
     }
     throw new DisputeAlreadyResolvedError();
   }
@@ -2437,6 +2440,10 @@ export interface BookingListItemBase {
   /** UTC epoch seconds -- when the provider marked the client as arrived,
    * `null` until marked. */
   arrivedAt: number | null;
+  /** UTC epoch seconds -- when the shop declined this hold, `null`
+   * otherwise, so the client's card can say "declined" rather than showing
+   * the same countdown as a hold nobody answered. */
+  declinedAt: number | null;
 }
 
 export interface ClientBookingListItem extends BookingListItemBase {
@@ -2502,6 +2509,7 @@ function toBookingListItemBase(
     holdReleasedReason: booking.holdReleaseReason,
     isExpiredHold: isExpiredHoldRow(booking, now),
     arrivedAt: booking.arrivedAt,
+    declinedAt: booking.declinedAt,
   };
 }
 

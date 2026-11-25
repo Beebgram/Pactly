@@ -573,6 +573,9 @@ export async function updateEscrowContractId(
    * deploy XDR, stored so `submitSignedTransaction` can match a signed
    * envelope's own computed hash against it before ever relaying it. */
   txHash?: string,
+  /** Issue #7: the SEP-38 quote id to persist on the booking. Null if not
+   * provided (keeps existing behavior for pre-7 bookings). */
+  anchorQuoteId?: string,
 ): Promise<void> {
   const result = await db
     .update(bookings)
@@ -580,6 +583,10 @@ export async function updateEscrowContractId(
       escrowContractId: contractId,
       escrowDeployXdr: unsignedXdr ?? null,
       escrowDeployTxHash: txHash ?? null,
+      // Issue #7: persist the SEP-38 quote id at lock time so the booking
+      // retains its reference even if the quote later ages out or the deposit
+      // fails.
+      anchorQuoteId: anchorQuoteId ?? null,
       // Issue #6: the deploy is no longer in flight -- this booking now has
       // a persisted contractId, so the claim taken for it is released in
       // this same atomic write (every later lock call returns from the

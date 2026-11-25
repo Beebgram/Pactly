@@ -663,6 +663,10 @@ export interface ProviderProfileTextInput {
   sessionLengthMinutes: number;
   /** "How to find the shop" -- free text, no geocoding. */
   location: string;
+  /** Issue #128: notice text shown on public profile and booking page */
+  noticeText: string;
+  /** Issue #128: epoch seconds after which the notice is no longer shown */
+  noticeEndDate: number;
 }
 
 const MIN_PROFILE_SESSION_LENGTH_MINUTES = 15;
@@ -678,6 +682,12 @@ export function validateProviderProfileText(input: ProviderProfileTextInput): Re
   }
   if (typeof input.bio !== "string" || input.bio.trim() === "") {
     details.bio = "Description is required.";
+  }
+  if (typeof input.noticeText !== "string") {
+    details.noticeText = "Notice text must be a string.";
+  }
+  if (typeof input.noticeEndDate !== "number" || isNaN(input.noticeEndDate)) {
+    details.noticeEndDate = "Notice end date must be a number.";
   }
   if (
     !Array.isArray(input.languages) ||
@@ -730,6 +740,8 @@ export async function updateProviderProfile(
     languages: JSON.stringify([...new Set(input.languages.map((language) => language.trim()))]),
     sessionLengthMinutes: input.sessionLengthMinutes,
     location: input.location.trim(),
+    noticeText: input.noticeText.trim(),
+    noticeEndDate: input.noticeEndDate,
   });
   return getOwnProviderProfile(db, walletAddress, now);
 }
