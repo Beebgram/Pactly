@@ -100,6 +100,8 @@ export const providerProfiles = sqliteTable("provider_profiles", {
    * offered (0-120). Does not change weekly hours or move existing locks. */
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
   isApproved: integer("is_approved", { mode: "boolean" }).notNull().default(false),
+  suspendedAt: integer("suspended_at"),
+  suspensionReason: text("suspension_reason"),
   /** Issue #62: the shop's own pause on *new* bookings. Independent of
    * `isApproved` -- an admin suspension still hides the shop entirely, and
    * this pause never clears one. While `true`, discovery advertises the
@@ -118,6 +120,10 @@ export const providerProfiles = sqliteTable("provider_profiles", {
   /** Issue #128: end date (epoch seconds) after which the notice is no longer
    * shown. Past this date the notice is cleared automatically. */
   noticeEndDate: integer("notice_end_date"),
+  /** Issue #145: optional/intake answers stored as JSON. Each entry has
+   * `questionId`, `questionText`, `isOptional`, and `answer`. Null answer
+   * means unanswered (only allowed when `isOptional` is true). */
+  intakeAnswers: text("intake_answers").notNull().default("[]"),
   /** Increases only on the chain's `released` event (FR20); never written
    * by hand outside the event worker's own bookkeeping. */
   verifiedSessionCount: integer("verified_session_count").notNull().default(0),
@@ -750,6 +756,10 @@ export const passkeyCredentials = sqliteTable("passkey_credentials", {
   /** JSON-encoded array of transport hints (`["internal"]`, ...). */
   transports: text("transports").notNull().default("[]"),
   createdAt: integer("created_at").notNull(),
+  /** Count of failed passkey prompt attempts. Reset on successful sign-in. */
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  /** Epoch ms when the failure counter was last reset. Used to compute wait time. */
+  failuresResetAt: integer("failures_reset_at"),
 });
 
 /**
@@ -939,3 +949,15 @@ export const escrowContractDeployments = sqliteTable(
 );
 
 export type WaitlistEntryRow = typeof waitlistEntries.$inferSelect;
+
+export const escrowContractDeployments = sqliteTable(
+  "escrow_contract_deployments",
+  {
+    bookingId: text("booking_id").notNull(),
+    contractId: text("contract_id").notNull(),
+    deployedAt: integer("deployed_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.bookingId, table.contractId] })],
+);
+
+export type EscrowContractDeploymentRow = typeof escrowContractDeployments.$inferSelect;
